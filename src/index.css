@@ -1,0 +1,33 @@
+:root {
+  --black: #080808;
+  --surface: #101010;
+  --surface2: #161616;
+  --border: #222;
+  --orange: #ff5c1a;
+  --orange-dim: #ff5c1a33;
+  --orange-glow: #ff5c1a66;
+  --white: #f0ece4;
+  --muted: #666;
+  --mid: #999;
+  --font-display: 'Bebas Neue', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+
+  color-scheme: dark;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-body);
+  font-weight: 300;
+  background: var(--black);
+  color: var(--white);
+  @apply antialiased;
+}
