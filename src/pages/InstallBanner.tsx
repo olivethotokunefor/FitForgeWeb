@@ -59,7 +59,7 @@ export function InstallBanner() {
       }
       setDeferredPrompt(null)
     } else {
-      // iOS or other - show instructions
+      // Show instructions for all cases without native prompt
       setShowInstructions(true)
     }
   }
@@ -136,7 +136,8 @@ export function InstallBanner() {
                 <div className="step">
                   <div className="step-number">1</div>
                   <div className="step-content">
-                    Tap the <strong>Chrome menu button</strong> (three dots ⋮)
+                    Tap the <strong>Chrome menu button</strong> (three dots ⋮) in the top right corner
+                    <div className="step-icon">⋮</div>
                   </div>
                 </div>
                 <div className="step-arrow">↓</div>
@@ -144,13 +145,15 @@ export function InstallBanner() {
                   <div className="step-number">2</div>
                   <div className="step-content">
                     Tap <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong>
+                    <div className="step-icon">📲</div>
                   </div>
                 </div>
                 <div className="step-arrow">↓</div>
                 <div className="step">
                   <div className="step-number">3</div>
                   <div className="step-content">
-                    Tap <strong>"Install"</strong> on the popup
+                    Tap <strong>"Install"</strong> on the confirmation popup
+                    <div className="step-icon">✅</div>
                   </div>
                 </div>
               </div>
@@ -159,21 +162,21 @@ export function InstallBanner() {
                 <div className="step">
                   <div className="step-number">1</div>
                   <div className="step-content">
-                    Open Chrome or Safari browser
+                    Open Chrome or Samsung Internet browser
                   </div>
                 </div>
                 <div className="step-arrow">↓</div>
                 <div className="step">
                   <div className="step-number">2</div>
                   <div className="step-content">
-                    Tap the menu button (⋮ or Share)
+                    Tap the menu button (⋮) in the top/bottom corner
                   </div>
                 </div>
                 <div className="step-arrow">↓</div>
                 <div className="step">
                   <div className="step-number">3</div>
                   <div className="step-content">
-                    Select "Install App" or "Add to Home Screen"
+                    Select "Install app" or "Add to Home screen"
                   </div>
                 </div>
               </div>
