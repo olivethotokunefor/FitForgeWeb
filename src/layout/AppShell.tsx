@@ -2,6 +2,8 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthProvider'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import '../app-ui.css'
+import { InstallBanner } from '../pages/InstallBanner'
+
 
 function NavItem({
   to,
@@ -174,7 +176,7 @@ export function AppShell() {
             </button>
           </div>
         </div>
-
+        <InstallBanner/>
         <Outlet />
       </div>
     </div>
