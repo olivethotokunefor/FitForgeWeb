@@ -1,3 +1,4 @@
+// src/components/InstallBanner.tsx
 import { useEffect, useState } from 'react'
 
 // Check if app is installed
@@ -5,27 +6,31 @@ const isAppInstalled = () => {
   // Check if running in standalone mode (installed PWA)
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches
   const isIOSStandalone = (navigator as any).standalone === true
-  const isInstalled = isStandalone || isIOSStandalone
-  
-  return isInstalled
+  return isStandalone || isIOSStandalone
 }
 
 export function InstallBanner() {
-  const [isInstalled, setIsInstalled] = useState(true) // Start as true to avoid flash
+  const [isInstalled, setIsInstalled] = useState(true)
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null)
-  const [isMobile, setIsMobile] = useState(false)
+  const [platform, setPlatform] = useState<'android' | 'ios' | 'other'>('other')
+  const [showInstructions, setShowInstructions] = useState(false)
 
   useEffect(() => {
     // Check if app is already installed
     const installed = isAppInstalled()
     setIsInstalled(installed)
 
-    // Check if on mobile device
+    // Detect platform
     const userAgent = navigator.userAgent.toLowerCase()
-    const isMobileDevice = /android|webos|iphone|ipad|ipod|blackberry|windows phone/.test(userAgent)
-    setIsMobile(isMobileDevice)
+    if (/android/.test(userAgent)) {
+      setPlatform('android')
+    } else if (/iphone|ipad|ipod/.test(userAgent)) {
+      setPlatform('ios')
+    } else {
+      setPlatform('other')
+    }
 
-    // Listen for beforeinstallprompt event (Android/Chrome)
+    // Listen for beforeinstallprompt event (Android/Chrome only)
     const handler = (e: Event) => {
       e.preventDefault()
       setDeferredPrompt(e)
@@ -45,77 +50,141 @@ export function InstallBanner() {
   }, [])
 
   const handleInstall = async () => {
-    if (deferredPrompt) {
-      // Chrome/Android install
+    if (deferredPrompt && platform === 'android') {
+      // Chrome/Android - trigger native install
       deferredPrompt.prompt()
       const { outcome } = await deferredPrompt.userChoice
       if (outcome === 'accepted') {
         setIsInstalled(true)
       }
       setDeferredPrompt(null)
-    } else if (isMobile && !isInstalled) {
-      // iOS or other mobile browsers - show instructions
-      showIOSInstructions()
+    } else {
+      // iOS or other - show instructions
+      setShowInstructions(true)
     }
   }
 
-  const showIOSInstructions = () => {
-    // Create a modal with instructions for iOS
-    const modal = document.createElement('div')
-    modal.style.position = 'fixed'
-    modal.style.top = '0'
-    modal.style.left = '0'
-    modal.style.right = '0'
-    modal.style.bottom = '0'
-    modal.style.background = 'rgba(0,0,0,0.9)'
-    modal.style.zIndex = '9999'
-    modal.style.display = 'flex'
-    modal.style.alignItems = 'center'
-    modal.style.justifyContent = 'center'
-    modal.style.padding = '20px'
-    
-    modal.innerHTML = `
-      <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 24px; max-width: 320px; text-align: center;">
-        <div style="font-size: 48px; margin-bottom: 16px;">📱</div>
-        <h3 style="color: var(--white); margin-bottom: 16px;">Install FitForge</h3>
-        <p style="color: var(--mid); margin-bottom: 20px; font-size: 14px;">Tap the Share button then "Add to Home Screen"</p>
-        <div style="background: var(--surface2); border-radius: 12px; padding: 16px; margin-bottom: 20px;">
-          <div style="display: flex; align-items: center; justify-content: center; gap: 20px;">
-            <span style="font-size: 32px;">📤</span>
-            <span style="font-size: 24px; color: var(--orange);">→</span>
-            <span style="font-size: 32px;">➕</span>
-          </div>
-          <div style="font-size: 12px; color: var(--mid); margin-top: 8px;">
-            Share → Add to Home Screen
-          </div>
-        </div>
-        <button id="close-modal" style="background: var(--orange); border: none; padding: 12px 24px; border-radius: 10px; color: #000; font-weight: 600; cursor: pointer; width: 100%;">
-          Got it
-        </button>
-      </div>
-    `
-    
-    document.body.appendChild(modal)
-    document.getElementById('close-modal')?.addEventListener('click', () => {
-      modal.remove()
-    })
+  const closeInstructions = () => {
+    setShowInstructions(false)
   }
 
-  // Don't show if already installed
+  // Don't show banner if already installed
   if (isInstalled) return null
 
   return (
-    <div className="install-banner">
-      <div className="install-banner-content">
-        <div className="install-banner-icon">📱</div>
-        <div className="install-banner-text">
-          <strong>Install FitForge App</strong>
-          <p>Get the best experience with offline support and home screen access</p>
+    <>
+      {/* Install Banner */}
+      <div className="install-banner">
+        <div className="install-banner-content">
+          <div className="install-banner-icon">
+            {platform === 'android' ? '🤖' : '📱'}
+          </div>
+          <div className="install-banner-text">
+            <strong>Install FitForge App</strong>
+            <p>
+              {platform === 'android' 
+                ? 'Install in one click for offline access and home screen launch'
+                : platform === 'ios'
+                ? 'Add to Home Screen for the best experience'
+                : 'Install app for better experience'}
+            </p>
+          </div>
+          <button onClick={handleInstall} className="install-banner-btn">
+            {platform === 'android' ? 'Install' : 'Add to Home Screen'}
+          </button>
         </div>
-        <button onClick={handleInstall} className="install-banner-btn">
-          Install
-        </button>
       </div>
-    </div>
+
+      {/* Instructions Modal */}
+      {showInstructions && (
+        <div className="install-modal-overlay" onClick={closeInstructions}>
+          <div className="install-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="install-modal-close" onClick={closeInstructions}>✕</button>
+            
+            <div className="install-modal-icon">
+              {platform === 'ios' ? '📱' : '🤖'}
+            </div>
+            <h3>Install FitForge on {platform === 'ios' ? 'iPhone/iPad' : 'Android'}</h3>
+            
+            {platform === 'ios' ? (
+              <div className="install-steps">
+                <div className="step">
+                  <div className="step-number">1</div>
+                  <div className="step-content">
+                    Tap the <strong>Share button</strong> at the bottom of the screen
+                    <div className="step-icon">📤</div>
+                  </div>
+                </div>
+                <div className="step-arrow">↓</div>
+                <div className="step">
+                  <div className="step-number">2</div>
+                  <div className="step-content">
+                    Scroll down and tap <strong>"Add to Home Screen"</strong>
+                    <div className="step-icon">➕</div>
+                  </div>
+                </div>
+                <div className="step-arrow">↓</div>
+                <div className="step">
+                  <div className="step-number">3</div>
+                  <div className="step-content">
+                    Tap <strong>"Add"</strong> in the top right corner
+                  </div>
+                </div>
+              </div>
+            ) : platform === 'android' ? (
+              <div className="install-steps">
+                <div className="step">
+                  <div className="step-number">1</div>
+                  <div className="step-content">
+                    Tap the <strong>Chrome menu button</strong> (three dots ⋮)
+                  </div>
+                </div>
+                <div className="step-arrow">↓</div>
+                <div className="step">
+                  <div className="step-number">2</div>
+                  <div className="step-content">
+                    Tap <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong>
+                  </div>
+                </div>
+                <div className="step-arrow">↓</div>
+                <div className="step">
+                  <div className="step-number">3</div>
+                  <div className="step-content">
+                    Tap <strong>"Install"</strong> on the popup
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="install-steps">
+                <div className="step">
+                  <div className="step-number">1</div>
+                  <div className="step-content">
+                    Open Chrome or Safari browser
+                  </div>
+                </div>
+                <div className="step-arrow">↓</div>
+                <div className="step">
+                  <div className="step-number">2</div>
+                  <div className="step-content">
+                    Tap the menu button (⋮ or Share)
+                  </div>
+                </div>
+                <div className="step-arrow">↓</div>
+                <div className="step">
+                  <div className="step-number">3</div>
+                  <div className="step-content">
+                    Select "Install App" or "Add to Home Screen"
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            <button className="install-modal-btn" onClick={closeInstructions}>
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
