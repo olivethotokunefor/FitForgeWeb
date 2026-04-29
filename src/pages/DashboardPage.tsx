@@ -1,20 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthProvider'
 import { useDashboardStats, useWorkoutSessions } from '../hooks/useWorkouts'
 
 type HeatLevel = '' | 'l1' | 'l2' | 'l3' | 'l4'
 
-function randomHeat(): HeatLevel {
-  const r = Math.random()
-  if (r < 0.35) return ''
-  if (r < 0.55) return 'l1'
-  if (r < 0.72) return 'l2'
-  if (r < 0.88) return 'l3'
-  return 'l4'
-}
-
-// Returns a friendly greeting based on hour of day
 function greeting() {
   const h = new Date().getHours()
   if (h < 12) return 'Good Morning'
@@ -22,22 +12,31 @@ function greeting() {
   return 'Good Evening'
 }
 
-// Formats a goal value like "build_muscle" → "Build Muscle"
 function formatGoal(goal: string | null | undefined) {
   if (!goal) return null
   return goal.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
+// Calculate volume intensity level for heatmap
+function getHeatLevel(volume: number): HeatLevel {
+  if (volume === 0) return ''
+  if (volume < 500) return 'l1'
+  if (volume < 1000) return 'l2'
+  if (volume < 2000) return 'l3'
+  return 'l4'
+}
+
+// Get week number from date
+
 export function DashboardPage() {
-  const navigate    = useNavigate()
+  const navigate = useNavigate()
   const { user, profile, loading: authLoading } = useAuth()
 
-  // ✅ Use real profile data for display name
   const displayName = useMemo(() => {
     if (profile?.first_name) return profile.first_name
-    if (profile?.last_name)  return profile.last_name
-    if (user?.displayName)   return user.displayName.split(' ')[0]
-    if (user?.email)         return user.email.split('@')[0]
+    if (profile?.last_name) return profile.last_name
+    if (user?.displayName) return user.displayName.split(' ')[0]
+    if (user?.email) return user.email.split('@')[0]
     return 'Athlete'
   }, [profile, user])
 
@@ -55,19 +54,52 @@ export function DashboardPage() {
     error: sessionsError,
   } = useWorkoutSessions()
 
-  const [heat, setHeat] = useState<HeatLevel[][]>([])
-
-  useEffect(() => {
+  // Build real heatmap from actual workout data
+  const heatmapData = useMemo(() => {
+    // Create a map of date -> total volume
+    const workoutMap = new Map<string, number>()
+    
+    if (sessions && sessions.length > 0) {
+      sessions.forEach((session: any) => {
+        if (session.finished_at && session.total_volume_kg) {
+          const date = session.finished_at?.toDate?.() || new Date(session.finished_at)
+          if (!isNaN(date.getTime())) {
+            const dateKey = date.toISOString().split('T')[0]
+            const currentVolume = workoutMap.get(dateKey) || 0
+            workoutMap.set(dateKey, currentVolume + (session.total_volume_kg || 0))
+          }
+        }
+      })
+    }
+    
+    // Build 12 weeks of data (84 days)
     const weeks = 12
-    const days  = 7
+    const days = 7
     const grid: HeatLevel[][] = []
+    
+    // Start from 12 weeks ago
+    const today = new Date()
+    const startDate = new Date(today)
+    startDate.setDate(today.getDate() - (weeks * 7))
+    
     for (let d = 0; d < days; d++) {
       const row: HeatLevel[] = []
-      for (let w = 0; w < weeks; w++) row.push(randomHeat())
+      const dayOffset = d // 0 = Sunday, 1 = Monday, etc.
+      
+      for (let w = 0; w < weeks; w++) {
+        const currentDate = new Date(startDate)
+        currentDate.setDate(startDate.getDate() + (w * 7) + dayOffset)
+        
+        const dateKey = currentDate.toISOString().split('T')[0]
+        const volume = workoutMap.get(dateKey) || 0
+        
+        row.push(getHeatLevel(volume))
+      }
       grid.push(row)
     }
-    setHeat(grid)
-  }, [])
+    
+    return grid
+  }, [sessions])
 
   const lastSession = useMemo(() => {
     if (!sessions || sessions.length === 0) return null
@@ -79,16 +111,51 @@ export function DashboardPage() {
     return Array.isArray(raw) ? raw : []
   }, [stats?.personalRecords])
 
-  // ✅ Pull streak directly from profile as the ground truth (stats also has it but profile is live)
   const streak = profile?.streak ?? stats?.streak ?? 0
-
-  // ✅ Build a personalised "today's plan" label from profile goal
   const goalLabel = formatGoal(profile?.goal)
 
-  // Today's date string
   const todayStr = new Date().toLocaleDateString('en-GB', {
     weekday: 'long', month: 'long', day: 'numeric',
   })
+
+  // Calculate volume trend (compare last 2 weeks to previous 2 weeks)
+  const volumeTrend = useMemo(() => {
+    if (!sessions) return 0
+    
+    const last4Weeks = sessions
+      .filter((s: any) => s.finished_at)
+      .sort((a: any, b: any) => {
+        const dateA = a.finished_at?.toDate?.() || new Date(a.finished_at)
+        const dateB = b.finished_at?.toDate?.() || new Date(b.finished_at)
+        return dateB.getTime() - dateA.getTime()
+      })
+      .slice(0, 28) // Last 28 days
+      .reduce((sum: number, s: any) => sum + (s.total_volume_kg || 0), 0)
+    
+    const prev4Weeks = sessions
+      .filter((s: any) => s.finished_at)
+      .slice(28, 56)
+      .reduce((sum: number, s: any) => sum + (s.total_volume_kg || 0), 0)
+    
+    if (prev4Weeks === 0) return 14
+    return Math.round(((last4Weeks - prev4Weeks) / prev4Weeks) * 100)
+  }, [sessions])
+
+  // Get month names for labels
+  const monthLabels = useMemo(() => {
+    const today = new Date()
+    const startDate = new Date(today)
+    startDate.setDate(today.getDate() - (12 * 7))
+    
+    const months: string[] = []
+    for (let i = 0; i < 12; i++) {
+      const date = new Date(startDate)
+      date.setDate(startDate.getDate() + (i * 7) + 3)
+      months.push(date.toLocaleDateString('en-US', { month: 'short' }))
+    }
+    // Remove duplicates and return unique months
+    return [...new Set(months)]
+  }, [])
 
   return (
     <div className="page" id="page-dashboard">
@@ -96,14 +163,13 @@ export function DashboardPage() {
         <h1>
           {greeting()}, <em>{authLoading ? '…' : displayName}</em>
         </h1>
-        {/* ✅ Show real goal and date instead of hardcoded text */}
         <p>
           {todayStr}
           {goalLabel ? ` · ${goalLabel} focus` : ''}
         </p>
       </div>
 
-      {/* ── Profile summary strip (only when profile is loaded) ── */}
+      {/* Profile summary strip */}
       {profile && (
         <div style={{
           display: 'flex', gap: 24, padding: '12px 0 4px',
@@ -111,10 +177,10 @@ export function DashboardPage() {
           marginBottom: 4, flexWrap: 'wrap',
         }}>
           {[
-            { label: 'Experience',  value: profile.experience?.replace(/\b\w/g, c => c.toUpperCase()) },
-            { label: 'Goal',        value: goalLabel },
+            { label: 'Experience', value: profile.experience?.replace(/\b\w/g, c => c.toUpperCase()) },
+            { label: 'Goal', value: goalLabel },
             { label: 'Days / week', value: profile.days_per_week ? `${profile.days_per_week} days` : null },
-            { label: 'Equipment',   value: profile.equipment?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) },
+            { label: 'Equipment', value: profile.equipment?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) },
             { label: 'Body weight', value: profile.weight_kg ? `${profile.weight_kg} kg` : null },
           ]
             .filter(s => s.value)
@@ -144,12 +210,14 @@ export function DashboardPage() {
 
       <div className="stat-cards">
         <div className="card accent">
-          <div className="card-label">This Week's Volume</div>
+          <div className="card-label">This Month's Volume</div>
           <div className="card-value orange">
-            {statsLoading ? '—' : String(stats?.volumeThisMonth ?? 0)}
+            {statsLoading ? '—' : String(stats?.volumeThisMonth ?? 0).toLocaleString()}
             <span style={{ fontSize: 20, color: 'var(--muted)' }}>kg</span>
           </div>
-          <div className="card-delta up">↑ 14% vs last week</div>
+          <div className={`card-delta ${volumeTrend >= 0 ? 'up' : 'down'}`}>
+            {volumeTrend >= 0 ? '↑' : '↓'} {Math.abs(volumeTrend)}% vs last month
+          </div>
           <div className="mini-chart">
             <div className="mini-bar" style={{ height: '40%' }} />
             <div className="mini-bar mid" style={{ height: '60%' }} />
@@ -164,7 +232,7 @@ export function DashboardPage() {
         <div className="card">
           <div className="card-label">Workouts This Month</div>
           <div className="card-value">{statsLoading ? '—' : String(stats?.workoutsThisMonth ?? 0)}</div>
-          <div className="card-delta up">↑ On track</div>
+          <div className="card-delta up">↑ {stats?.workoutsThisMonth ? 'Keep going' : 'Start today'}</div>
           <div className="mini-chart">
             <div className="mini-bar hi" style={{ height: '100%' }} />
             <div className="mini-bar hi" style={{ height: '100%' }} />
@@ -178,18 +246,17 @@ export function DashboardPage() {
 
         <div className="card">
           <div className="card-label">Current Streak</div>
-          {/* ✅ Uses real streak from profile */}
           <div className="card-value">
             {authLoading || statsLoading ? '—' : String(streak)}
             <span style={{ fontSize: 20, color: 'var(--muted)' }}>days</span>
           </div>
-          <div className="card-delta up">🔥 Keep it going</div>
+          <div className="card-delta up">🔥 {streak === 0 ? 'Log a workout to start' : 'Keep it going'}</div>
         </div>
 
         <div className="card">
           <div className="card-label">PRs This Month</div>
           <div className="card-value orange">{statsLoading ? '—' : String(prs.length)}</div>
-          <div className="card-delta up">↑ vs last month</div>
+          <div className="card-delta up">{prs.length === 0 ? 'Break a record' : '↑ New achievements'}</div>
         </div>
       </div>
 
@@ -216,10 +283,9 @@ export function DashboardPage() {
               <div className="activity-value">
                 <div className="activity-weight">
                   {typeof lastSession.total_volume_kg === 'number'
-                    ? `${Math.round(lastSession.total_volume_kg)}kg`
+                    ? `${Math.round(lastSession.total_volume_kg).toLocaleString()}kg`
                     : ''}
                 </div>
-                <div className="activity-sets" />
               </div>
             </div>
           ) : (
@@ -243,10 +309,9 @@ export function DashboardPage() {
                 AI Insight
               </span>
             </div>
-            {/* ✅ Personalised message using profile goal */}
             <div style={{ fontSize: 14, lineHeight: 1.65, color: 'var(--white)' }}>
               {goalLabel
-                ? <>Your <strong style={{ color: 'var(--orange)' }}>{goalLabel}</strong> plan is active. Ask your AI coach for today's recommendation.</>
+                ? <>Your <strong style={{ color: 'var(--orange)' }}>{goalLabel}</strong> plan is active. {stats?.workoutsThisMonth === 0 ? 'Complete your first workout to get personalized feedback!' : 'Ask your AI coach for today\'s recommendation.'}</>
                 : <>Complete your profile to get <strong style={{ color: 'var(--orange)' }}>personalised AI coaching</strong> tailored to your goals.</>}
             </div>
             <div style={{ marginTop: 12 }}>
@@ -261,37 +326,23 @@ export function DashboardPage() {
           </div>
 
           <div className="card">
-            <div className="card-label mb-4">Today's Scheduled Workout</div>
+            <div className="card-label mb-4">Today's Goal</div>
             <div style={{
               fontFamily: 'var(--font-display)',
               fontSize: 22, marginBottom: 12, color: 'var(--orange)',
             }}>
-              {/* ✅ Label adapts to profile goal */}
-              {profile?.goal === 'get_stronger' ? 'STRENGTH A'
-                : profile?.goal === 'lose_fat'  ? 'CARDIO + LIFT'
-                : profile?.goal === 'build_muscle' ? 'HYPERTROPHY A'
-                : 'PUSH A'}
+              {stats?.workoutsThisMonth === 0 
+                ? 'LOG YOUR FIRST WORKOUT' 
+                : streak === 0 
+                  ? 'START A NEW STREAK'
+                  : `MAINTAIN YOUR ${streak} DAY STREAK`}
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {[
-                'Bench Press · 4×5',
-                'Incline DB Press · 3×10',
-                'Overhead Press · 3×8',
-              ].map(t => (
-                <div key={t} style={{
-                  fontSize: 13, color: 'var(--mid)',
-                  display: 'flex', gap: 8, alignItems: 'center',
-                }}>
-                  <span style={{ color: 'var(--orange)', fontSize: 10 }}>→</span>
-                  {t}
-                </div>
-              ))}
-              <div style={{
-                fontSize: 13, color: 'var(--muted)',
-                display: 'flex', gap: 8, alignItems: 'center',
-              }}>
-                <span style={{ color: 'var(--muted)', fontSize: 10 }}>+</span>2 more exercises
-              </div>
+            <div style={{ fontSize: 13, color: 'var(--mid)' }}>
+              {stats?.workoutsThisMonth === 0 
+                ? 'Click below to log your first workout and start tracking your progress.'
+                : streak === 0 
+                  ? `You've completed ${stats?.workoutsThisMonth} workouts this month. Log one today to start your streak!`
+                  : `You're crushing it with a ${streak} day streak! Don't break the chain today.`}
             </div>
             <div style={{ marginTop: 16 }}>
               <button
@@ -299,7 +350,7 @@ export function DashboardPage() {
                 className="btn btn-orange btn-sm"
                 onClick={() => navigate('/app/workouts/new')}
               >
-                Start Workout
+                {stats?.workoutsThisMonth === 0 ? 'Start First Workout' : 'Log Workout'}
               </button>
             </div>
           </div>
@@ -309,24 +360,60 @@ export function DashboardPage() {
       <div className="grid-2 section-gap">
         <div className="card">
           <div className="card-label mb-4">Workout Calendar — Last 12 Weeks</div>
-          <div>
-            {heat.map((row, idx) => (
-              <div className="heatmap-row" key={idx}>
-                {row.map((lvl, i) => (
-                  <div key={i} className={`heatmap-cell ${lvl}`} />
+          {sessionsLoading ? (
+            <div style={{ fontSize: 13, color: 'var(--mid)', textAlign: 'center', padding: 20 }}>
+              Loading workout history...
+            </div>
+          ) : (
+            <>
+              {/* Month labels */}
+              <div style={{ display: 'flex', marginBottom: 8, marginLeft: 28 }}>
+                {monthLabels.map((month, idx) => (
+                  <div key={idx} style={{ flex: 1, fontSize: 10, color: 'var(--muted)', textAlign: 'center' }}>
+                    {month}
+                  </div>
                 ))}
               </div>
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 12 }}>
-            <span style={{ fontSize: 11, color: 'var(--muted)' }}>Less</span>
-            <div className="heatmap-cell" />
-            <div className="heatmap-cell l1" />
-            <div className="heatmap-cell l2" />
-            <div className="heatmap-cell l3" />
-            <div className="heatmap-cell l4" />
-            <span style={{ fontSize: 11, color: 'var(--muted)' }}>More</span>
-          </div>
+              
+              {/* Heatmap grid */}
+              <div>
+                {heatmapData.map((row, rowIdx) => {
+                  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+                  return (
+                    <div className="heatmap-row" key={rowIdx} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <div style={{ width: 28, fontSize: 10, color: 'var(--muted)' }}>{dayNames[rowIdx]}</div>
+                      <div style={{ display: 'flex', gap: 4, flex: 1 }}>
+                        {row.map((lvl, colIdx) => (
+                          <div 
+                            key={colIdx} 
+                            className={`heatmap-cell ${lvl}`} 
+                            style={{ flex: 1 }}
+                            title={`Week ${colIdx + 1} ${dayNames[rowIdx]}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end', marginTop: 12 }}>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>Less</span>
+                <div className="heatmap-cell" />
+                <div className="heatmap-cell l1" />
+                <div className="heatmap-cell l2" />
+                <div className="heatmap-cell l3" />
+                <div className="heatmap-cell l4" />
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>More</span>
+              </div>
+              
+              {sessions && sessions.filter((s: any) => s.finished_at).length === 0 && (
+                <div style={{ fontSize: 12, color: 'var(--mid)', textAlign: 'center', marginTop: 16 }}>
+                  No workouts logged yet. Complete a workout to see your calendar light up!
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         <div className="card">
@@ -334,11 +421,14 @@ export function DashboardPage() {
           {statsLoading ? (
             <div style={{ fontSize: 13, color: 'var(--mid)' }}>Loading PRs…</div>
           ) : prs.length === 0 ? (
-            <div style={{ fontSize: 13, color: 'var(--mid)' }}>No PRs yet.</div>
+            <div style={{ fontSize: 13, color: 'var(--mid)', textAlign: 'center', padding: 20 }}>
+              No PRs yet.<br />
+              <span style={{ fontSize: 12 }}>Push your limits to set new records!</span>
+            </div>
           ) : (
             prs.slice(0, 6).map(pr => {
-              const r        = pr as Record<string, unknown>
-              const nameVal  = typeof r.exercise_name === 'string' ? r.exercise_name : typeof r.exercise_id === 'string' ? r.exercise_id : 'PR'
+              const r = pr as Record<string, unknown>
+              const nameVal = typeof r.exercise_name === 'string' ? r.exercise_name : typeof r.exercise_id === 'string' ? r.exercise_id : 'PR'
               const weightVal = typeof r.weight_kg === 'number' ? `${r.weight_kg}kg` : '—'
               return (
                 <div className="pr-item" key={String(r.id ?? nameVal)}>

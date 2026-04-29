@@ -1,5 +1,5 @@
 import { getApp, getApps, initializeApp } from 'firebase/app'
-import { getAuth } from 'firebase/auth'  // Remove GoogleAuthProvider
+import { getAuth } from 'firebase/auth'
 import { getFirestore, initializeFirestore } from 'firebase/firestore'
 
 type FirebaseEnvKey =
@@ -31,16 +31,14 @@ const shouldInitializeApp = getApps().length === 0
 const app = shouldInitializeApp ? initializeApp(firebaseConfig) : getApp()
 
 export const auth = getAuth(app)
+
+// Fixed: Removed 'useFetchStreams' - it doesn't exist in Firestore settings
 export const db = shouldInitializeApp
   ? initializeFirestore(app, {
       ignoreUndefinedProperties: true,
       experimentalAutoDetectLongPolling: true,
-      useFetchStreams: false,
+      // useFetchStreams: false, // ← REMOVE THIS LINE - property doesn't exist
     })
   : getFirestore(app)
-
-// Remove Google Provider entirely
-// export const googleProvider = new GoogleAuthProvider()
-// googleProvider.setCustomParameters({ prompt: 'select_account' })
 
 auth.useDeviceLanguage()

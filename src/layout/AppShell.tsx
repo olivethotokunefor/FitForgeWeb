@@ -30,7 +30,7 @@ function NavItem({
 }
 
 export function AppShell() {
-  const { user, signOut } = useAuth()
+  const { user, signOut, profile, loading } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
   const appRef = useRef<HTMLDivElement>(null)
@@ -75,10 +75,22 @@ export function AppShell() {
   }, [location.pathname])
 
   const userInitial = useMemo(() => {
+    if (profile?.first_name) return profile.first_name.charAt(0).toUpperCase()
+    if (profile?.last_name) return profile.last_name.charAt(0).toUpperCase()
     const email = user?.email ?? ''
     const ch = email.trim().charAt(0)
     return ch ? ch.toUpperCase() : 'U'
-  }, [user?.email])
+  }, [user?.email, profile])
+
+  const userDisplayName = useMemo(() => {
+    if (profile?.first_name) return profile.first_name
+    if (profile?.last_name) return profile.last_name
+    const email = user?.email ?? ''
+    return email.split('@')[0] || 'User'
+  }, [user?.email, profile])
+
+  // Get real streak from profile
+  const streak = profile?.streak ?? 0
 
   const closeNav = () => setNavOpen(false)
 
@@ -117,8 +129,9 @@ export function AppShell() {
 
         <div className="sidebar-user">
           <div className="user-avatar">{userInitial}</div>
-          <div>
-            <div className="user-name">{user?.email ?? 'User'}</div>
+          <div className="user-info">
+            <div className="user-name">{userDisplayName}</div>
+            <div className="user-email">{user?.email}</div>
           </div>
         </div>
       </div>
@@ -135,7 +148,15 @@ export function AppShell() {
         <div className="topbar">
           <div className="topbar-title">{topbarTitle}</div>
           <div className="topbar-right">
-            <div className="streak-pill">🔥 12 Day Streak</div>
+            <div className="streak-pill">
+              {loading ? (
+                '🔥 Loading...'
+              ) : streak > 0 ? (
+                `🔥 ${streak} Day Streak`
+              ) : (
+                '🔥 Start Your Streak'
+              )}
+            </div>
             <button
               type="button"
               className="topbar-btn ghost"

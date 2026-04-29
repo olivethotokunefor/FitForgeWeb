@@ -1,60 +1,164 @@
-import { useCallback, useState } from 'react'
+// hooks/useAIChat.ts
+import { useCallback, useState, useEffect } from 'react'
+import { 
+  collection, 
+  addDoc, 
+  query, 
+  orderBy, 
+  onSnapshot,
+  Timestamp,
+  getDocs,
+  deleteDoc,
+  limit
+} from 'firebase/firestore'
+import { db } from '../lib/firebase'
+import { useAuth } from '../auth/AuthProvider'
+import { useUserContext } from './useUserContext'
 
 type ChatMessage = {
-  id: number
+  id: string
   role: 'user' | 'assistant'
   content: string
-}
-
-function buildCoachReply(message: string) {
-  const lower = message.toLowerCase()
-
-  if (lower.includes('bench')) {
-    return 'For your bench plateau: keep one heavy top set at RPE 8, then do 2 to 3 back-off sets at 90% of that load. Add 2.5kg only after you hit every prescribed rep with clean bar speed.'
-  }
-
-  if (lower.includes('recovery')) {
-    return 'Prioritise sleep, hydration, and an easy walk on rest days. Keep hard sets hard, but keep recovery days genuinely light so you can push performance again in your next session.'
-  }
-
-  if (lower.includes('45') || lower.includes('45-minute')) {
-    return 'For a 45-minute session, run 1 main lift, 2 secondary movements, and 1 quick finisher. Rest 2 minutes on compounds, 60 to 75 seconds on accessories, and stop most sets with 1 to 2 reps in reserve.'
-  }
-
-  if (lower.includes('3 day') || lower.includes('3-day') || lower.includes('3 days')) {
-    return 'A solid 3-day split is: Day 1 full body, Day 2 upper focus, Day 3 lower plus core. Build each day around one compound lift first, then add 3 to 4 accessories that match your goal.'
-  }
-
-  return 'Keep it simple: focus on one main lift, add 2 to 4 accessories, and progress either reps or load each week. If performance drops for more than two sessions in a row, reduce fatigue before adding more volume.'
+  createdAt: Timestamp
+  sessionId?: string
 }
 
 export function useAIChat() {
+  const { user } = useAuth()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const userContext = useUserContext()
+
+  // ✅ ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
+  // So we call useAuth, useState, useUserContext, useEffect, useCallback all upfront
+
+  // Load chat history from Firebase (moved to top, no conditional return)
+  useEffect(() => {
+    // Put the conditional logic INSIDE the effect, not before calling the effect
+    if (!user?.uid) return
+
+    const storedSessionId = localStorage.getItem(`fitforge_chat_session_${user.uid}`)
+    
+    if (storedSessionId) {
+      setSessionId(storedSessionId)
+    } else {
+      const newSessionId = `${user.uid}_${Date.now()}`
+      setSessionId(newSessionId)
+      localStorage.setItem(`fitforge_chat_session_${user.uid}`, newSessionId)
+    }
+
+    const messagesRef = collection(db, 'users', user.uid, 'chat_messages')
+    const q = query(messagesRef, orderBy('createdAt', 'asc'), limit(100))
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const loadedMessages: ChatMessage[] = []
+      snapshot.forEach((doc) => {
+        loadedMessages.push({ id: doc.id, ...doc.data() } as ChatMessage)
+      })
+      setMessages(loadedMessages)
+    })
+
+    return () => unsubscribe()
+  }, [user?.uid])  // ✅ Dependency array is fine, but effect is always called
 
   const sendMessage = useCallback(async (text: string) => {
     const trimmed = text.trim()
-    if (!trimmed) return
+    if (!trimmed || !user?.uid) return
 
-    const userMsg: ChatMessage = { role: 'user', content: trimmed, id: Date.now() }
-    const aiMsgId = Date.now() + 1
+    const userMsg: Omit<ChatMessage, 'id'> = {
+      role: 'user',
+      content: trimmed,
+      createdAt: Timestamp.now(),
+      sessionId: sessionId || undefined,
+    }
 
-    setMessages((prev) => [...prev, userMsg, { role: 'assistant', content: '', id: aiMsgId }])
+    try {
+      await addDoc(collection(db, 'users', user.uid, 'chat_messages'), userMsg)
+    } catch (error) {
+      console.error('Failed to save user message:', error)
+    }
+
     setIsStreaming(true)
 
     try {
-      await new Promise<void>((resolve) => {
-        window.setTimeout(() => resolve(), 300)
-      })
+      const recentMessages = messages.slice(-10)
+      const history = recentMessages.map(msg => ({
+        role: msg.role === 'assistant' ? 'assistant' : 'user',
+        content: msg.content
+      }))
 
-      const reply = buildCoachReply(trimmed)
-      setMessages((prev) =>
-        prev.map((msg) => (msg.id === aiMsgId ? { ...msg, content: reply } : msg)),
-      )
+      const systemPrompt = `You are FitForge AI Coach, a professional fitness coach. 
+You have access to the user's REAL training data below. Use it to give personalized advice.
+
+${userContext.getContextPrompt()}
+
+RULES:
+- Use their actual numbers (volume, PRs, streak) when relevant
+- If they ask about progress, reference their real data
+- Keep responses encouraging but honest
+- Be concise (2-4 sentences)
+- Never give medical advice`
+
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': window.location.origin,
+          'X-Title': 'FitForge AI Coach',
+        },
+        body: JSON.stringify({
+          model: 'openai/gpt-oss-120b',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...history,
+            { role: 'user', content: trimmed }
+          ],
+          temperature: 0.7,
+          max_tokens: 1045,
+        }),
+      })
+      
+      const data = await response.json()
+      const reply = data.choices?.[0]?.message?.content || "I couldn't process that. Please try again."
+
+      const aiMsg: Omit<ChatMessage, 'id'> = {
+        role: 'assistant',
+        content: reply,
+        createdAt: Timestamp.now(),
+        sessionId: sessionId || undefined,
+      }
+
+      await addDoc(collection(db, 'users', user.uid, 'chat_messages'), aiMsg)
+
+    } catch (error) {
+      console.error('Chat error:', error)
+      
+      const errorMsg: Omit<ChatMessage, 'id'> = {
+        role: 'assistant',
+        content: 'Sorry, I\'m having trouble connecting. Please try again.',
+        createdAt: Timestamp.now(),
+        sessionId: sessionId || undefined,
+      }
+      await addDoc(collection(db, 'users', user.uid, 'chat_messages'), errorMsg)
+      
     } finally {
       setIsStreaming(false)
     }
-  }, [])
+  }, [messages, user?.uid, sessionId, userContext])
 
-  return { messages, sendMessage, isStreaming }
+  const clearHistory = useCallback(async () => {
+    if (!user?.uid) return
+    
+    const messagesRef = collection(db, 'users', user.uid, 'chat_messages')
+    const snapshot = await getDocs(messagesRef)
+    const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref))
+    await Promise.all(deletePromises)
+    
+    setMessages([])
+  }, [user?.uid])
+
+  // ✅ Return all values in the same order every time
+  return { messages, sendMessage, isStreaming, userContext, clearHistory }
 }

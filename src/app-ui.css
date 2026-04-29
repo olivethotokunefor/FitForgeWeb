@@ -1852,3 +1852,155 @@
     font-size: 11px;
   }
 }
+/* Profile Page Responsive Styles */
+
+/* Base profile page overrides - allow natural scrolling */
+#page-profile-shell {
+  height: auto !important;
+  overflow: visible !important;
+  flex: 1;
+}
+
+/* Mobile responsive overrides */
+@media (max-width: 900px) {
+  #page-profile-body {
+    flex-direction: column !important;
+  }
+  
+  #page-profile-leftcol {
+    width: 100% !important;
+    min-width: auto !important;
+    border-right: none !important;
+    border-bottom: 1px solid var(--border);
+  }
+  
+  #page-profile-rightcol {
+    width: 100% !important;
+  }
+  
+  #page-profile-formsection {
+    padding: 20px !important;
+  }
+  
+  #page-profile-fieldrow {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+  
+  #page-profile-optiongrid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  
+  #page-profile-daybtnrow {
+    flex-wrap: wrap !important;
+  }
+  
+  #page-profile-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 16px !important;
+    padding: 20px !important;
+  }
+  
+  #page-profile-headerRight {
+    width: 100% !important;
+    justify-content: space-between !important;
+  }
+  
+  #page-profile-bottombar {
+    flex-direction: column !important;
+    gap: 12px !important;
+    align-items: flex-start !important;
+    padding: 16px 20px !important;
+  }
+  
+  #page-profile-bottombar button {
+    width: 100% !important;
+  }
+}
+
+/* Small mobile */
+@media (max-width: 600px) {
+  #page-profile-optiongrid {
+    grid-template-columns: 1fr !important;
+  }
+  
+  #page-profile-formsection {
+    padding: 16px !important;
+  }
+  
+  .page-header {
+    padding: 16px !important;
+  }
+}
+
+/* Fix for input focus states */
+#page-profile-shell input:focus,
+#page-profile-shell select:focus {
+  outline: none;
+  border-color: var(--orange) !important;
+  box-shadow: 0 0 0 2px rgba(255, 92, 26, 0.2);
+}
+
+/* Fix for button hover states */
+#page-profile-shell .sectionTab:hover:not(.active) {
+  background: var(--surface3);
+  color: var(--white);
+}
+
+/* Fix for option card hover */
+#page-profile-shell .optionCard:hover:not(.active) {
+  border-color: var(--orange);
+  transform: translateY(-2px);
+}
+
+/* Fix for day button hover */
+#page-profile-shell .dayBtn:hover:not(.active) {
+  border-color: var(--orange);
+  color: var(--orange);
+}
+/* Add these to your app-ui.css */
+
+.sidebar-user {
+  padding: 1rem;
+  border-top: 1px solid var(--border, #222);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.user-avatar {
+  width: 2rem;
+  height: 2rem;
+  background: var(--orange, #ff5c1a);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.875rem;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.user-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.user-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: 0.125rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-email {
+  font-size: 0.6875rem;
+  color: var(--muted, #666);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

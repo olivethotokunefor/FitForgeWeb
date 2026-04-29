@@ -324,7 +324,7 @@ export function WorkoutNewPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {activeSets.map((s, idx) => (
+                    {activeSets.map((s) => (
                       <tr key={s.id}>
                         <td>
                           <input

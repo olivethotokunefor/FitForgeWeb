@@ -1,5 +1,7 @@
+// pages/PlansPage.tsx
 import { useEffect, useMemo, useState } from 'react'
 import { useActivatePlan, useGeneratePlan, usePlans } from '../hooks/usePlans'
+import { useOptimizePlan } from '../hooks/useOptimizePlan'
 
 type DayKey = 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat' | 'Sun'
 
@@ -20,6 +22,7 @@ type PlanRecord = {
   name?: string
   description?: string
   is_active?: boolean
+  progression_insights?: any[]
   days?: PlanDay[]
 }
 
@@ -46,9 +49,12 @@ const FALLBACK_WEEK = {
 
 export function PlansPage() {
   const [activePlanId, setActivePlanId] = useState('')
+  const [insights, setInsights] = useState<any[]>([])
+  
   const { data, isLoading, isError, error } = usePlans()
   const activatePlan = useActivatePlan()
   const generatePlan = useGeneratePlan()
+  const optimizePlan = useOptimizePlan()
 
   const plans = useMemo(() => (Array.isArray(data) ? (data as PlanRecord[]) : []), [data])
 
@@ -65,10 +71,16 @@ export function PlansPage() {
     setActivePlanId(active?.id ?? '')
   }, [activePlanId, plans])
 
-  const activePlan =
-    plans.find((plan) => plan.id === activePlanId) ??
-    plans.find((plan) => plan.is_active) ??
-    null
+  const activePlan = plans.find((plan) => plan.id === activePlanId) ?? plans.find((plan) => plan.is_active) ?? null
+
+  // Load insights from active plan
+  useEffect(() => {
+    if (activePlan?.progression_insights) {
+      setInsights(activePlan.progression_insights)
+    } else {
+      setInsights([])
+    }
+  }, [activePlan])
 
   const week = useMemo(() => {
     const days = Array.isArray(activePlan?.days) ? activePlan.days : []
@@ -117,13 +129,36 @@ export function PlansPage() {
     }
   }
 
+  async function handleGetInsights() {
+    if (!activePlanId || !activePlan?.days) return
+    
+    // Extract all exercises from the plan
+    const allExercises: { exercise_id: string; exercise_name: string }[] = []
+    activePlan.days.forEach((day: any) => {
+      if (day.exercises) {
+        day.exercises.forEach((ex: any) => {
+          allExercises.push({
+            exercise_id: ex.exercise_id,
+            exercise_name: ex.exercise_name
+          })
+        })
+      }
+    })
+    
+    const result = await optimizePlan.mutateAsync({ 
+      planId: activePlanId, 
+      exercises: allExercises 
+    })
+    setInsights(result)
+  }
+
   return (
     <div className="page" id="page-plans">
       <div className="page-header">
         <h1>
           Training <em>Plans</em>
         </h1>
-        <p>Build weekly schedules, templates, and progression blocks.</p>
+        <p>AI-powered plans that adapt to your progress</p>
       </div>
 
       <div className="grid-2-1">
@@ -155,7 +190,7 @@ export function PlansPage() {
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') void handleSelectPlan(plan.id)
                     }}
-                    style={{ justifyContent: 'space-between' }}
+                    style={{ justifyContent: 'space-between', cursor: 'pointer' }}
                   >
                     <div>
                       <div style={{ fontWeight: 700, color: 'var(--white)' }}>{name}</div>
@@ -203,6 +238,66 @@ export function PlansPage() {
             </div>
           </div>
 
+          {/* AI Insights Section */}
+          <div className="card">
+            <div className="card-label mb-4">🤖 AI Progression Insights</div>
+            
+            {insights.length === 0 ? (
+              <div>
+                <div style={{ fontSize: 13, color: 'var(--mid)', marginBottom: 12 }}>
+                  Get personalized recommendations based on your recent workout performance.
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-orange btn-sm"
+                  onClick={() => void handleGetInsights()}
+                  disabled={optimizePlan.isPending || !activePlanId}
+                >
+                  {optimizePlan.isPending ? 'Analyzing...' : 'Analyze My Progress'}
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {insights.map((insight, idx) => (
+                  <div 
+                    key={idx} 
+                    style={{ 
+                      padding: 12, 
+                      background: 'var(--surface2)', 
+                      borderRadius: 8,
+                      borderLeft: `3px solid ${
+                        insight.priority === 'high' ? '#ff5c1a' : 
+                        insight.priority === 'medium' ? '#f59e0b' : 
+                        '#22c55e'
+                      }`
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14 }}>{insight.recommendation}</div>
+                      <div className={`chip ${
+                        insight.type === 'increase_weight' ? 'warn' :
+                        insight.type === 'deload' ? 'bad' :
+                        'good'
+                      }`}>
+                        {insight.type.replace('_', ' ')}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--mid)' }}>{insight.details}</div>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => void handleGetInsights()}
+                  disabled={optimizePlan.isPending}
+                  style={{ marginTop: 8 }}
+                >
+                  {optimizePlan.isPending ? 'Updating...' : 'Refresh Insights'}
+                </button>
+              </div>
+            )}
+          </div>
+
           <div className="card">
             <div className="card-label mb-4">This Week</div>
             <div className="grid-2">
@@ -216,6 +311,7 @@ export function PlansPage() {
                       padding: 14,
                       border: '1px solid var(--border)',
                       background: 'var(--surface2)',
+                      borderRadius: 8,
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
